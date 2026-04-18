@@ -24,7 +24,8 @@ import {
   X,
   Trophy,
   Globe,
-  Tag
+  Tag,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -155,6 +156,19 @@ export interface Tournament {
   createdAt: string;
 }
 
+export interface GamePost {
+  id: string;
+  userId: string;
+  userName: string;
+  sport: 'FOOTBALL' | 'CRICKET';
+  date: string;
+  time: string;
+  playersNeeded: number;
+  description?: string;
+  contactInfo?: string;
+  createdAt: string;
+}
+
 export default function App() {
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -163,6 +177,8 @@ export default function App() {
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [bookings, setBookings] = useState<ServerBooking[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [gamePosts, setGamePosts] = useState<GamePost[]>([]);
+  const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
   const [hourlyRate, setHourlyRate] = useState(BASE_HOURLY_RATE);
   const [timeBasedPricing, setTimeBasedPricing] = useState<TimeBasedPricing[]>([]);
   
@@ -183,7 +199,8 @@ export default function App() {
 
   const [showMenu, setShowMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [currentTab, setCurrentTab] = useState<'booking' | 'events'>('booking');
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [currentTab, setCurrentTab] = useState<'booking' | 'events' | 'community'>('booking');
   const [activeViewers, setActiveViewers] = useState(1);
   const socketRef = React.useRef<any>(null);
 
@@ -316,6 +333,51 @@ export default function App() {
 
     return () => unsubscribe();
   }, [authUser]);
+
+  // 5. GamePosts Listener
+  useEffect(() => {
+    if (!authUser) return;
+    const q = collection(db, 'game_posts');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedPosts: GamePost[] = [];
+      snapshot.forEach(doc => {
+        fetchedPosts.push({ id: doc.id, ...doc.data() } as GamePost);
+      });
+      setGamePosts(fetchedPosts.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'game_posts');
+    });
+    return () => unsubscribe();
+  }, [authUser]);
+
+  // 6. Weather Effect
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=18.6251&longitude=73.8824&current=temperature_2m,weather_code');
+        const data = await response.json();
+        
+        // Simple mapping for demonstration
+        const code = data.current.weather_code;
+        let cond = 'Clear';
+        if (code >= 1 && code <= 3) cond = 'Partly Cloudy';
+        if (code >= 45 && code <= 48) cond = 'Fog';
+        if (code >= 51 && code <= 67) cond = 'Rain';
+        if (code >= 71 && code <= 86) cond = 'Snow';
+        if (code >= 95) cond = 'Stormy';
+
+        setWeather({
+          temp: Math.round(data.current.temperature_2m),
+          condition: cond
+        });
+      } catch (e) {
+        console.error('Weather fetch error:', e);
+      }
+    };
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 600000); // Update every 10 min
+    return () => clearInterval(interval);
+  }, []);
 
   // 4. Pricing Settings Listener
   useEffect(() => {
@@ -498,6 +560,31 @@ export default function App() {
     signOut(auth);
   };
 
+  const handleCreatePost = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!authUser || !userName) return;
+    
+    const formData = new FormData(e.currentTarget);
+    const postData = {
+      userId: authUser.uid,
+      userName: userName,
+      sport: formData.get('sport') as 'FOOTBALL' | 'CRICKET',
+      date: formData.get('date') as string,
+      time: formData.get('time') as string,
+      playersNeeded: parseInt(formData.get('players') as string),
+      description: formData.get('description') as string,
+      contactInfo: userPhone,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(collection(db, 'game_posts')), postData);
+      setShowPostModal(false);
+    } catch (error) {
+       handleFirestoreError(error, OperationType.CREATE, 'game_posts');
+    }
+  };
+
   const next7Days = Array.from({ length: 7 }, (_, i) => addDays(startOfDay(new Date()), i));
 
   const myBookings = useMemo(() => {
@@ -568,16 +655,58 @@ export default function App() {
               </button>
             </div>
               <div className="flex flex-col text-right uppercase tracking-widest font-mono text-sm xl:text-base">
-                <div className="flex items-center gap-2 justify-end mb-1">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neo-green opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-neo-green"></span>
-                  </span>
-                  <span className="text-[10px] text-neo-green font-bold">{activeViewers} LIVE VIEWERS</span>
+                <div className="flex items-center gap-4 justify-end">
+                  {weather && (
+                    <div className="flex items-center gap-2 text-white/60">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] sm:text-[11px] font-black text-white">{weather.temp}°C</span>
+                        <span className="text-[7px] sm:text-[8px] opacity-70">{weather.condition}</span>
+                      </div>
+                      <Globe className="w-4 h-4 text-white/40" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neo-green opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-neo-green"></span>
+                    </span>
+                    <span className="text-[10px] text-neo-green font-bold">{activeViewers} LIVE</span>
+                  </div>
                 </div>
               </div>
             </div>
           </header>
+
+        {/* TAB SWITCHER */}
+        <div className="flex gap-4 mb-8 bg-black/40 p-1.5 rounded-2xl border border-white/5 w-max">
+          <button 
+            onClick={() => setCurrentTab('booking')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
+              currentTab === 'booking' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+            )}
+          >
+            Booking
+          </button>
+          <button 
+            onClick={() => setCurrentTab('events')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
+              currentTab === 'events' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+            )}
+          >
+            Events
+          </button>
+          <button 
+            onClick={() => setCurrentTab('community')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
+              currentTab === 'community' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+            )}
+          >
+            Community
+          </button>
+        </div>
 
         {/* MAIN CONTAINER */}
         <main className="flex-1 flex flex-col">
@@ -629,6 +758,74 @@ export default function App() {
                 className="mt-8 border border-neo-green text-neo-green px-8 py-3 rounded-full hover:bg-neo-green/10 transition-all font-bold uppercase tracking-widest text-xs self-center"
               >
                 Back to Booking
+              </button>
+            </div>
+          ) : currentTab === 'community' ? (
+            <div className="glass-panel w-full max-w-4xl mx-auto flex flex-col gap-8">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div>
+                  <h2 className="text-3xl font-black text-neo-green tracking-[4px] uppercase">Matchmaking</h2>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Found a gap? Find a player. Georgopol Community Board.</p>
+                </div>
+                <button 
+                  onClick={() => setShowPostModal(true)}
+                  className="w-full sm:w-auto bg-neo-green text-black px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-[0_0_20px_rgba(194,255,0,0.3)]"
+                >
+                  Post a Game
+                </button>
+              </div>
+              
+              {gamePosts.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6">
+                   {gamePosts.map(post => (
+                     <div key={post.id} className="bg-black/40 border border-white/10 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-center gap-6 hover:border-neo-green/30 transition-all group relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity">
+                         <Globe className="w-24 h-24 text-neo-green" />
+                       </div>
+                       
+                       <div className="flex flex-col gap-3 w-full relative z-10">
+                         <div className="flex items-center gap-3">
+                           <span className={cn(
+                             "text-[9px] font-black px-2.5 py-1 rounded-sm border uppercase tracking-widest",
+                             post.sport === 'FOOTBALL' ? "bg-neo-green/10 text-neo-green border-neo-green/20" : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                           )}>{post.sport}</span>
+                           <span className="text-[10px] text-gray-500 font-mono uppercase flex items-center gap-2">
+                             <Clock className="w-3 h-3" /> {post.date} @ {post.time}
+                           </span>
+                         </div>
+                         <h3 className="text-xl font-bold text-white uppercase tracking-wider">{post.userName} needs {post.playersNeeded} {post.playersNeeded === 1 ? 'Player' : 'Players'}</h3>
+                         <p className="text-sm text-gray-400 max-w-xl italic leading-relaxed">"{post.description || 'Looking for teammates to join a casual match at Dighi Turf.'}"</p>
+                       </div>
+                       
+                       <div className="flex flex-col items-center sm:items-end gap-3 shrink-0 w-full md:w-auto relative z-10">
+                         <div className="text-[10px] text-gray-500 uppercase tracking-widest bg-black/40 px-3 py-1.5 rounded-lg border border-white/10 font-mono flex items-center gap-2">
+                           <User className="w-3 h-3" /> UID: {post.userId.substring(0,8)}
+                         </div>
+                         <button 
+                           onClick={() => window.open(`tel:${post.contactInfo || '0000000000'}`)}
+                           className="w-full md:w-auto bg-white/5 hover:bg-neo-green hover:text-black transition-all text-[11px] font-black uppercase tracking-[2px] px-8 py-3.5 rounded-2xl border border-white/10"
+                         >
+                           Join Match
+                         </button>
+                       </div>
+                     </div>
+                   ))}
+                </div>
+              ) : (
+                <div className="py-24 text-center border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.02]">
+                  <div className="bg-white/5 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Globe className="w-8 h-8 text-white/20" />
+                  </div>
+                  <h4 className="text-white font-bold uppercase tracking-widest mb-2">No Active Posts</h4>
+                  <p className="text-gray-500 uppercase tracking-widest text-[10px]">The board is currently clear. Be the spark and post a match requirement.</p>
+                </div>
+              )}
+              
+              <button 
+                onClick={() => setCurrentTab('booking')}
+                className="mt-8 border border-neo-green text-neo-green px-10 py-4 rounded-full hover:bg-neo-green/10 transition-all font-bold uppercase tracking-widest text-[11px] self-center"
+              >
+                Back to Pitch
               </button>
             </div>
           ) : (
@@ -1273,6 +1470,88 @@ export default function App() {
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {showPostModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#0A0F0B] border border-white/10 w-full max-w-xl rounded-[40px] p-8 sm:p-12 relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-12 opacity-[0.03] -mr-10 -mt-10">
+                 <Globe className="w-40 h-40 text-neo-green" />
+              </div>
+
+              <div className="flex justify-between items-start mb-8 relative z-10">
+                <div>
+                  <h3 className="text-3xl font-black text-neo-green uppercase tracking-[4px]">POST A GAME</h3>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Recruit teammates from the Georgopol Collective.</p>
+                </div>
+                <button onClick={() => setShowPostModal(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+                  <X className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreatePost} className="space-y-6 relative z-10">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Sport</label>
+                    <select name="sport" required className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none appearance-none">
+                      <option value="FOOTBALL">Football</option>
+                      <option value="CRICKET">Cricket</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Players Needed</label>
+                    <input type="number" name="players" min="1" max="20" required defaultValue="1" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Date</label>
+                    <input type="date" name="date" required defaultValue={format(new Date(), 'yyyy-MM-dd')} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none invert dark:invert-0" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Time</label>
+                    <select name="time" required className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none appearance-none">
+                      {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Short Description</label>
+                  <textarea name="description" placeholder="e.g. Need a striker for 7v7 match. Skill level: Intermediate." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none h-24 resize-none" />
+                </div>
+
+                <div className="pt-4 flex gap-4">
+                   <button 
+                     type="button"
+                     onClick={() => setShowPostModal(false)}
+                     className="flex-1 bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase tracking-[2px] text-xs hover:bg-white/10 transition-all"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     type="submit"
+                     className="flex-[2] bg-neo-green text-black py-4 rounded-2xl font-black uppercase tracking-[2px] text-xs hover:scale-[1.02] transition-all shadow-[0_0_30px_rgba(194,255,0,0.2)]"
+                   >
+                     Announce Game
+                   </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showSuccess && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -1351,6 +1630,16 @@ export default function App() {
                 >
                   <Trophy className="w-5 h-5" />
                   <span>Tournaments</span>
+                </button>
+                <button 
+                  onClick={() => { setCurrentTab('community'); setShowMenu(false); setCurrentView('app'); }}
+                  className={cn(
+                    "flex items-center gap-4 px-4 py-4 rounded-xl transition-all font-bold uppercase tracking-widest text-sm",
+                    currentTab === 'community' && currentView === 'app' ? "bg-neo-green text-black" : "hover:bg-white/5 text-gray-400 hover:text-white"
+                  )}
+                >
+                  <Users className="w-5 h-5" />
+                  <span>Community</span>
                 </button>
                 {isAdmin && (
                   <button 

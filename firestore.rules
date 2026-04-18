@@ -78,6 +78,15 @@ service cloud.firestore {
              data.location is string;
     }
 
+    function isValidGamePost(data) {
+      return data.keys().hasAll(['userId', 'userName', 'sport', 'date', 'time', 'playersNeeded', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.userName is string &&
+             data.sport in ['FOOTBALL', 'CRICKET'] &&
+             data.playersNeeded is number &&
+             data.playersNeeded > 0;
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -135,6 +144,20 @@ service cloud.firestore {
       
       // Only admins can manage tournaments
       allow write: if isAdmin() && (request.method == 'delete' || isValidTournament(request.resource.data));
+    }
+
+    match /game_posts/{postId} {
+      // Only authenticated users can see and participate in community posts
+      allow read: if isAuthenticated();
+      
+      // Users can post their own matchmaking requests
+      allow create: if isAuthenticated() && isValidGamePost(request.resource.data);
+      
+      // Users can update their own posts (e.g. players joined)
+      allow update: if isDocOwner() && isValidGamePost(request.resource.data);
+      
+      // Delete if owner or Admin
+      allow delete: if isDocOwner() || isAdmin();
     }
 
     match /settings/{settingId} {

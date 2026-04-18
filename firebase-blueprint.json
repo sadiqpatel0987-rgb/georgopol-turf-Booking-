@@ -45,6 +45,23 @@
       },
       "required": ["title", "date", "description"]
     },
+    "GamePost": {
+      "title": "Community Game Post",
+      "description": "A post by a user looking for teammates or a game to join",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "sport": { "type": "string", "enum": ["FOOTBALL", "CRICKET"] },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "playersNeeded": { "type": "number" },
+        "description": { "type": "string" },
+        "contactInfo": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "sport", "date", "time", "playersNeeded"]
+    },
     "Settings": {
       "title": "Global Settings",
       "description": "Configuration settings for the application",
@@ -83,6 +100,10 @@
     "/tournaments/{tournamentId}": {
       "schema": "Tournament",
       "description": "Upcoming tournament events"
+    },
+    "/game_posts/{postId}": {
+      "schema": "GamePost",
+      "description": "Community matchmaking posts"
     }
   }
 }
