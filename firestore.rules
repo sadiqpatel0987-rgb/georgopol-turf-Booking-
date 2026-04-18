@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (auth.uid)
+    // Fields:
+    //   - name: string (1-100 chars)
+    //   - phone: string (8-15 chars)
+    //   - email: string (valid format)
+    //   - membership: string (NONE, PLATINUM, DIAMOND)
+    //   - createdAt: string (ISO date)
+    //
+    // Collection: bookings
+    // Document ID: auto-generated
+    // Fields:
+    //   - date: string (YYYY-MM-DD)
+    //   - slot: string (HH:mm)
+    //   - userName: string (1-100 chars)
+    //   - userPhone: string (8-15 chars)
+    //   - userId: string (Owner UID)
+    //   - createdAt: string (ISO date)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.get('email', '').lower() == 'patelsadiq233@gmail.com' ||
+        request.auth.token.get('email', '').lower() == 'sadiqpatel0987@gmail.com' ||
+        request.auth.uid == 'XzAYD4wtbgg4D57waALnDl9PtzF2'
+      );
+    }
+
+    function isValidSettings(data) {
+      // Allow if either field is being updated correctly or both are present
+      return (data.get('baseHourlyRate', 0) is number) ||
+             (data.get('timeBasedPricing', []) is list);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function isValidSlotString(slotStr) {
+      return slotStr is string && slotStr.matches("^\\d{2}:\\d{2}$");
+    }
+
+    function isValidTournament(data) {
+      return data.keys().hasAll(['title', 'date', 'time', 'description', 'location', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             isValidDateString(data.date) &&
+             data.time is string &&
+             data.description is string && data.description.size() > 0 &&
+             data.location is string;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'phone', 'email', 'membership']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 15 &&
+             isValidEmail(data.email) &&
+             data.membership in ['NONE', 'PLATINUM', 'DIAMOND'] &&
+             (data.get('referralCode', '') is string) &&
+             (data.get('referralsCount', 0) is number);
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['date', 'slot', 'userName', 'userPhone', 'userId']) &&
+             isValidDateString(data.date) &&
+             isValidSlotString(data.slot) &&
+             data.userName is string && data.userName.size() > 0 &&
+             data.userPhone is string &&
+             (data.get('referralCodeUsed', '') is string) &&
+             (data.get('discountType', 'NONE') in ['REFERRAL', 'NONE']) &&
+             (data.userId == request.auth.uid || isAdmin()); // Identity Integrity or Admin Bypass
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can only manage their own profile. Admin can view all.
+      // Allow searching for referral codes (list access with strict filtering)
+      allow read: if isOwner(userId) || isAdmin() || (isAuthenticated() && resource.data.referralCode != null);
+      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /bookings/{bookingId} {
+      // Allow everyone to list bookings (needed for real-time availability view)
+      // Note: In a production app, you might want to strip PII in a more secure way.
+      allow read: if true;
+      
+      // Users can only book for themselves, or Admins can book
+      allow create: if isAuthenticated() && isValidBooking(request.resource.data);
+      
+      // CANCELLATION: Only the owner of the booking can delete it, or Admin
+      allow delete: if isDocOwner() || isAdmin();
+      
+      // Allow Admins to edit any booking details
+      allow update: if isAdmin() && isValidBooking(request.resource.data);
+    }
+
+    match /tournaments/{tournamentId} {
+      // Everyone can see tournaments (even unauthenticated)
+      allow read: if true;
+      
+      // Only admins can manage tournaments
+      allow write: if isAdmin() && (request.method == 'delete' || isValidTournament(request.resource.data));
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSettings(request.resource.data);
+    }
+  }
+}

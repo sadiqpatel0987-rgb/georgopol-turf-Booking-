@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Store user profile and membership data",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the user" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "email": { "type": "string", "format": "email" },
+        "membership": { "type": "string", "enum": ["NONE", "BRONZE", "PLATINUM", "GOLD", "DIAMOND"] },
+        "referralCode": { "type": "string", "description": "Unique 6-char code for this user" },
+        "referralsCount": { "type": "number", "description": "Total successful referrals" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "email", "membership"]
+    },
+    "Booking": {
+      "title": "Turf Booking",
+      "description": "A single hour booking for a specific turf slot",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "YYYY-MM-DD format" },
+        "slot": { "type": "string", "description": "HH:mm format" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userId": { "type": "string", "description": "UID of the owner" },
+        "referralCodeUsed": { "type": "string", "description": "Code applied during booking" },
+        "discountType": { "type": "string", "enum": ["REFERRAL", "NONE"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "slot", "userName", "userPhone", "userId"]
+    },
+    "Tournament": {
+      "title": "Tournament Event",
+      "description": "Information about upcoming tournaments",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "description": "YYYY-MM-DD" },
+        "time": { "type": "string" },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date", "description"]
+    },
+    "Settings": {
+      "title": "Global Settings",
+      "description": "Configuration settings for the application",
+      "type": "object",
+      "properties": {
+        "baseHourlyRate": { "type": "number", "description": "Base rate for guest bookings" },
+        "timeBasedPricing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": { "type": "string", "description": "HH:mm" },
+              "end": { "type": "string", "description": "HH:mm" },
+              "price": { "type": "number" }
+            },
+            "required": ["start", "end", "price"]
+          }
+        }
+      },
+      "required": ["baseHourlyRate"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": "Settings",
+      "description": "Global application configuration"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Individual slot bookings"
+    },
+    "/tournaments/{tournamentId}": {
+      "schema": "Tournament",
+      "description": "Upcoming tournament events"
+    }
+  }
+}

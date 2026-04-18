@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  
+  --color-neo-green: #C2FF00; /* Matching the neon green */
+  --color-dark-bg: #0A0F0B;
+  --color-card-bg: rgba(20, 28, 22, 0.6);
+}
+
+@layer base {
+  body {
+    @apply bg-black text-white antialiased font-sans m-0 p-0;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-black/50 backdrop-blur-md border border-white/10 rounded-[24px] sm:rounded-[28px] p-5 sm:p-8;
+  }
+  
+  .clip-hexagon {
+    clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+  }
+}
+
+/* Custom scrollbar for horizontal lists */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
