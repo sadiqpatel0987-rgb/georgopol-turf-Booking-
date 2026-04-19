@@ -187,6 +187,7 @@ export default function App() {
   const [userPhone, setUserPhone] = useState('');
   const [userReferralCode, setUserReferralCode] = useState('');
   const [referralsCount, setReferralsCount] = useState(0);
+  const [hasUsedReferral, setHasUsedReferral] = useState(false);
 
   // Booking details
   const [appliedReferralCode, setAppliedReferralCode] = useState('');
@@ -249,13 +250,16 @@ export default function App() {
                const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                await updateDoc(userDocRef, { 
                  referralCode: newCode,
-                 referralsCount: 0 
+                 referralsCount: 0,
+                 hasUsedReferral: false
                });
                setUserReferralCode(newCode);
                setReferralsCount(0);
+               setHasUsedReferral(false);
              } else {
                setUserReferralCode(data.referralCode);
                setReferralsCount(data.referralsCount || 0);
+               setHasUsedReferral(!!data.hasUsedReferral);
              }
           } else {
              // Create Profile if missing
@@ -465,9 +469,17 @@ export default function App() {
       return;
     }
 
+    if (hasUsedReferral) {
+      setIsReferralValid(false);
+      setReferrerId(null);
+      setAppError("You have already used a referral discount.");
+      return;
+    }
+
     if (code.toUpperCase() === userReferralCode) {
       setIsReferralValid(false);
       setReferrerId(null);
+      setAppError("You cannot use your own referral code.");
       return;
     }
 
@@ -478,13 +490,16 @@ export default function App() {
       if (!querySnapshot.empty) {
         setIsReferralValid(true);
         setReferrerId(querySnapshot.docs[0].id);
+        setAppError(null);
       } else {
         setIsReferralValid(false);
         setReferrerId(null);
+        setAppError("Invalid referral code.");
       }
     } catch (error) {
       console.error('Error validating referral:', error);
       setIsReferralValid(false);
+      setAppError("Failed to validate referral code.");
     }
   };
 
@@ -526,6 +541,12 @@ export default function App() {
         batch.update(referrerRef, {
           referralsCount: increment(1)
         });
+        
+        // Mark current user as having used a referral
+        const userRef = doc(db, 'users', authUser.uid);
+        batch.update(userRef, {
+          hasUsedReferral: true
+        });
       }
 
       await batch.commit();
@@ -535,6 +556,7 @@ export default function App() {
         socketRef.current.emit('bookingChanged');
       }
 
+      if (isReferralValid) setHasUsedReferral(true);
       setAppError(null);
       setShowSuccess(true);
       setSelectedSlots([]);

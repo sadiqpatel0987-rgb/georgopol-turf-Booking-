@@ -11,6 +11,7 @@
         "membership": { "type": "string", "enum": ["NONE", "BRONZE", "PLATINUM", "GOLD", "DIAMOND"] },
         "referralCode": { "type": "string", "description": "Unique 6-char code for this user" },
         "referralsCount": { "type": "number", "description": "Total successful referrals" },
+        "hasUsedReferral": { "type": "boolean", "description": "Whether user has already claimed a referee discount" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "phone", "email", "membership"]

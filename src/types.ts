@@ -22,6 +22,7 @@ export interface UserProfile {
   membership: MembershipType;
   referralCode?: string;
   referralsCount?: number;
+  hasUsedReferral?: boolean;
   createdAt: string;
 }
 

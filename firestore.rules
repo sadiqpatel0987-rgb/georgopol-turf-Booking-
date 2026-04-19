@@ -98,23 +98,31 @@ service cloud.firestore {
              isValidEmail(data.email) &&
              data.membership in ['NONE', 'BRONZE', 'PLATINUM', 'DIAMOND'] &&
              (data.get('referralCode', '') is string) &&
-             (data.get('referralsCount', 0) is number);
+             (data.get('referralsCount', 0) is number) &&
+             (data.get('hasUsedReferral', false) is bool);
     }
 
     function isValidUserUpdate(incoming, current, targetId) {
       // Case 1: Full profile update (Owner only)
-      return (incoming.diff(current).affectedKeys().hasOnly(['name', 'phone', 'email', 'membership', 'referralCode', 'referralsCount']) && isOwner(targetId) && isValidUser(incoming)) ||
+      return (incoming.diff(current).affectedKeys().hasOnly(['name', 'phone', 'email', 'membership', 'referralCode', 'referralsCount', 'hasUsedReferral']) && isOwner(targetId) && isValidUser(incoming) && (current.get('hasUsedReferral', false) == false || incoming.hasUsedReferral == true)) ||
              // Case 2: Referral count increment (Public authenticated)
-             (incoming.diff(current).affectedKeys().hasOnly(['referralsCount']) && incoming.get('referralsCount', 0) == current.get('referralsCount', 0) + 1);
+             (incoming.diff(current).affectedKeys().hasOnly(['referralsCount']) && incoming.get('referralsCount', 0) == current.get('referralsCount', 0) + 1) ||
+             // Case 3: Mark referral used
+             (incoming.diff(current).affectedKeys().hasOnly(['hasUsedReferral']) && isOwner(targetId) && incoming.hasUsedReferral == true && current.get('hasUsedReferral', false) == false);
     }
 
     function isValidBooking(data) {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let alreadyUsedReferral = userDoc.get('hasUsedReferral', false);
+      let isSelfReferral = data.get('referralCodeUsed', '') != '' && data.get('referralCodeUsed', '') == userDoc.get('referralCode', '');
+
       return data.keys().hasAll(['date', 'slot', 'userName', 'userPhone', 'userId']) &&
              isValidDateString(data.date) &&
              isValidSlotString(data.slot) &&
              data.userName is string && data.userName.size() > 0 &&
              data.userPhone is string &&
              (data.get('referralCodeUsed', '') is string) &&
+             (data.get('referralCodeUsed', '') == '' || (!alreadyUsedReferral && !isSelfReferral)) &&
              (data.get('discountType', 'NONE') in ['REFERRAL', 'NONE']) &&
              (data.get('membership', 'NONE') in ['NONE', 'BRONZE', 'PLATINUM', 'DIAMOND']) &&
              (data.userId == request.auth.uid || isAdmin()); // Identity Integrity or Admin Bypass
