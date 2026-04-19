@@ -195,6 +195,7 @@ export default function App() {
   
   const [isBooking, setIsBooking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [appError, setAppError] = useState<string | null>(null);
   const [slotToCancel, setSlotToCancel] = useState<ServerBooking | null>(null);
 
   const [showMenu, setShowMenu] = useState(false);
@@ -534,10 +535,12 @@ export default function App() {
         socketRef.current.emit('bookingChanged');
       }
 
+      setAppError(null);
       setShowSuccess(true);
       setSelectedSlots([]);
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (error: any) {
+      setAppError("Failed to confirm booking. Please try again later.");
       handleFirestoreError(error, OperationType.WRITE, 'bookings');
     } finally {
       setIsBooking(false);
@@ -1282,6 +1285,12 @@ export default function App() {
           <div className="flex-1 p-8 flex flex-col justify-between">
             <div>
               <div className="section-header">Booking Summary</div>
+              
+              {appError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-bold uppercase tracking-widest animate-shake">
+                  {appError}
+                </div>
+              )}
               
               <div className="space-y-4 mb-2">
                 <input 

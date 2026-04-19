@@ -96,9 +96,16 @@ service cloud.firestore {
              data.name is string && data.name.size() >= 0 && data.name.size() <= 100 &&
              data.phone is string && data.phone.size() <= 20 &&
              isValidEmail(data.email) &&
-             data.membership in ['NONE', 'PLATINUM', 'DIAMOND'] &&
+             data.membership in ['NONE', 'BRONZE', 'PLATINUM', 'DIAMOND'] &&
              (data.get('referralCode', '') is string) &&
              (data.get('referralsCount', 0) is number);
+    }
+
+    function isValidUserUpdate(incoming, current, targetId) {
+      // Case 1: Full profile update (Owner only)
+      return (incoming.diff(current).affectedKeys().hasOnly(['name', 'phone', 'email', 'membership', 'referralCode', 'referralsCount']) && isOwner(targetId) && isValidUser(incoming)) ||
+             // Case 2: Referral count increment (Public authenticated)
+             (incoming.diff(current).affectedKeys().hasOnly(['referralsCount']) && incoming.get('referralsCount', 0) == current.get('referralsCount', 0) + 1);
     }
 
     function isValidBooking(data) {
@@ -109,6 +116,7 @@ service cloud.firestore {
              data.userPhone is string &&
              (data.get('referralCodeUsed', '') is string) &&
              (data.get('discountType', 'NONE') in ['REFERRAL', 'NONE']) &&
+             (data.get('membership', 'NONE') in ['NONE', 'BRONZE', 'PLATINUM', 'DIAMOND']) &&
              (data.userId == request.auth.uid || isAdmin()); // Identity Integrity or Admin Bypass
     }
 
@@ -119,7 +127,8 @@ service cloud.firestore {
     match /users/{userId} {
       // Users can only manage their own profile. Admin can view all.
       allow read: if isOwner(userId) || isAdmin() || (isAuthenticated() && resource != null && resource.data.get('referralCode', null) != null);
-      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && isValidUserUpdate(request.resource.data, resource.data, userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
     }
 
     match /bookings/{bookingId} {
