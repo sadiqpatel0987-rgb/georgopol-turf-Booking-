@@ -709,13 +709,6 @@ export default function App() {
                       <Globe className="w-4 h-4 text-white/40" />
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neo-green opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-neo-green"></span>
-                    </span>
-                    <span className="text-[10px] text-neo-green font-bold">{activeViewers} LIVE</span>
-                  </div>
                 </div>
               </div>
             </div>
