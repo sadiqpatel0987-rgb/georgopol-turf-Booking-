@@ -207,7 +207,11 @@ export default function App() {
   // Admin Setup
   const isAdmin = useMemo(() => {
     const email = authUser?.email?.toLowerCase();
-    return email === 'patelsadiq233@gmail.com' || email === 'sadiqpatel0987@gmail.com';
+    return (
+      email === 'patelsadiq233@gmail.com' || 
+      email === 'sadiqpatel0987@gmail.com' ||
+      email === 'patelsadiq13@gmail.com'
+    );
   }, [authUser]);
   const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
 
@@ -605,13 +609,21 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen font-sans text-white bg-[#0A0F0B]">
-      {/* Background Image & Overlay */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat fixed"
-        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=2000&auto=format&fit=crop')" }}
-      />
-      <div className="absolute inset-0 z-0 bg-black/60 shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]" />
+    <div className="relative flex flex-col min-h-[100dvh] font-sans text-white bg-[#0A0F0B]">
+      {/* Background Image & Overlay - Optimized for Fast Mobile Loading */}
+      <div className="absolute inset-0 z-0 overflow-hidden fixed bg-[#0A0F0B]">
+        <picture>
+          <source media="(max-width: 640px)" srcSet="https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=60&w=800&auto=format,compress&fit=crop" />
+          <img 
+            src="https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=2000&auto=format,compress&fit=crop" 
+            alt="Stadium turf background" 
+            className="w-full h-full object-cover object-center"
+            decoding="async" 
+            fetchPriority="high" 
+          />
+        </picture>
+      </div>
+      <div className="absolute inset-0 z-0 bg-black/60 shadow-[inset_0_0_150px_rgba(0,0,0,0.8)] fixed pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-[1300px] mx-auto flex-1 flex flex-col p-3 sm:p-6 lg:p-8">
         {/* HEADER */}
@@ -653,6 +665,13 @@ export default function App() {
                 <User className="w-3.5 h-3.5 sm:w-4 h-4" />
                 <span className="text-[10px] sm:text-[12px]">Account</span>
               </button>
+              <button 
+                onClick={handleLogout} 
+                className="flex items-center gap-2 border border-red-500/20 rounded-md px-2 py-1 sm:px-3 sm:py-1.5 hover:bg-red-500/10 transition-colors text-red-500"
+              >
+                <LogOut className="w-3.5 h-3.5 sm:w-4 h-4" />
+                <span className="text-[10px] sm:text-[12px]">Sign Out</span>
+              </button>
             </div>
               <div className="flex flex-col text-right uppercase tracking-widest font-mono text-sm xl:text-base">
                 <div className="flex items-center gap-4 justify-end">
@@ -680,32 +699,43 @@ export default function App() {
         {/* TAB SWITCHER */}
         <div className="flex gap-4 mb-8 bg-black/40 p-1.5 rounded-2xl border border-white/5 w-max">
           <button 
-            onClick={() => setCurrentTab('booking')}
+            onClick={() => { setCurrentTab('booking'); setCurrentView('app'); }}
             className={cn(
               "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'booking' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+              currentTab === 'booking' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
             )}
           >
             Booking
           </button>
           <button 
-            onClick={() => setCurrentTab('events')}
+            onClick={() => { setCurrentTab('events'); setCurrentView('app'); }}
             className={cn(
               "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'events' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+              currentTab === 'events' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
             )}
           >
             Events
           </button>
           <button 
-            onClick={() => setCurrentTab('community')}
+            onClick={() => { setCurrentTab('community'); setCurrentView('app'); }}
             className={cn(
               "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'community' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+              currentTab === 'community' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
             )}
           >
             Community
           </button>
+          {isAdmin && (
+            <button 
+              onClick={() => setCurrentView('admin')}
+              className={cn(
+                "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
+                currentView === 'admin' ? "bg-neo-green text-black" : "text-[#C2FF00]/60 hover:text-neo-green border border-neo-green/20"
+              )}
+            >
+              Admin
+            </button>
+          )}
         </div>
 
         {/* MAIN CONTAINER */}

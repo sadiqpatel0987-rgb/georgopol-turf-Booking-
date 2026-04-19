@@ -162,12 +162,20 @@ export default function AuthScreen() {
   };
 
   return (
-    <div className="min-h-screen relative text-white font-sans flex items-center justify-center p-4 overflow-hidden">
-      {/* Background Image & Overlay */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat fixedScale"
-        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=2000&auto=format&fit=crop')" }}
-      />
+    <div className="min-h-[100dvh] relative text-white font-sans flex items-center justify-center p-4 overflow-hidden">
+      {/* Background Image & Overlay - Optimized for Fast Mobile Loading */}
+      <div className="absolute inset-0 z-0 overflow-hidden bg-[#0A0F0B]">
+        <picture>
+          <source media="(max-width: 640px)" srcSet="https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=60&w=800&auto=format,compress&fit=crop" />
+          <img 
+            src="https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=2000&auto=format,compress&fit=crop" 
+            alt="Stadium turf background" 
+            className="w-full h-full object-cover object-center"
+            decoding="async" 
+            fetchPriority="high" 
+          />
+        </picture>
+      </div>
       <div className="absolute inset-0 z-0 bg-black/70 shadow-[inset_0_0_150px_rgba(0,0,0,0.9)] backdrop-blur-[1px]" />
 
       <div className="relative z-10 max-w-md w-full glass-panel p-6 sm:p-10 shadow-2xl scale-[1.0] sm:scale-[1.02]">

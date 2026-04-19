@@ -40,14 +40,14 @@ service cloud.firestore {
     }
 
     function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.userId;
+      return isAuthenticated() && request.auth.uid == resource.data.get('userId', null);
     }
 
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.get('email', '').lower() == 'patelsadiq233@gmail.com' ||
         request.auth.token.get('email', '').lower() == 'sadiqpatel0987@gmail.com' ||
-        request.auth.uid == 'XzAYD4wtbgg4D57waALnDl9PtzF2'
+        request.auth.token.get('email', '').lower() == 'patelsadiq13@gmail.com'
       );
     }
 
@@ -93,8 +93,8 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.keys().hasAll(['name', 'phone', 'email', 'membership']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 15 &&
+             data.name is string && data.name.size() >= 0 && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 20 &&
              isValidEmail(data.email) &&
              data.membership in ['NONE', 'PLATINUM', 'DIAMOND'] &&
              (data.get('referralCode', '') is string) &&
@@ -118,8 +118,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       // Users can only manage their own profile. Admin can view all.
-      // Allow searching for referral codes (list access with strict filtering)
-      allow read: if isOwner(userId) || isAdmin() || (isAuthenticated() && resource.data.referralCode != null);
+      allow read: if isOwner(userId) || isAdmin() || (isAuthenticated() && resource != null && resource.data.get('referralCode', null) != null);
       allow write: if isOwner(userId) && isValidUser(request.resource.data);
     }
 

@@ -10,8 +10,15 @@
 }
 
 @layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
     @apply bg-black text-white antialiased font-sans m-0 p-0;
+  }
+  /* Improve responsiveness of tap actions */
+  button, a {
+    touch-action: manipulation;
   }
 }
 
