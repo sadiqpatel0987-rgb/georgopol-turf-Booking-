@@ -926,6 +926,8 @@ export default function App() {
               const bookedBy = bookedSlotData?.userName;
               const isBooked = !!bookedBy;
               const isSelected = selectedSlots.includes(slot);
+              const isMyBooking = bookedSlotData?.userId === authUser.uid;
+              const canManage = isMyBooking || isAdmin;
               
               const displayTime = formatSlotDisplay(slot);
 
@@ -942,7 +944,9 @@ export default function App() {
                   disabled={isDisabled}
                   onClick={() => {
                     if (isBooked && bookedSlotData) {
-                      setSlotToCancel(bookedSlotData);
+                      if (canManage) {
+                        setSlotToCancel(bookedSlotData);
+                      }
                     } else if (!isDisabled) {
                       toggleSlot(slot);
                     }
@@ -952,7 +956,10 @@ export default function App() {
                     isDisabled
                       ? "opacity-20 cursor-not-allowed bg-black/40 border-white/5"
                       : isBooked
-                        ? "bg-black/60 opacity-50 border-white/10 hover:opacity-100 hover:border-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                        ? cn(
+                            "bg-black/60 opacity-50 border-white/10",
+                            canManage ? "hover:opacity-100 hover:border-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]" : "cursor-not-allowed"
+                          )
                         : isSelected
                           ? "border-neo-green bg-neo-green shadow-[0_0_20px_rgba(187,255,0,0.4)]"
                           : "border-white/10 bg-white/5 hover:border-neo-green/50 hover:bg-neo-green/5"
@@ -989,7 +996,7 @@ export default function App() {
                     {isBooked ? "BOOKED" : isDisabled ? "PASSED" : isSelected ? "SELECTED" : "AVAILABLE"}
                   </span>
 
-                  {isBooked && (
+                  {isBooked && canManage && (
                     <div className="absolute inset-0 bg-red-500/0 hover:bg-red-500/10 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
                       <span className="text-[8px] font-black text-red-500 uppercase tracking-tighter">Cancel?</span>
                     </div>
@@ -1007,7 +1014,8 @@ export default function App() {
               <span className="w-2 h-2 bg-border-dim" /> Available
             </span>
             <span className="flex items-center gap-1.5 opacity-40">
-              <span className="w-2 h-2 bg-booked-bg" /> Booked (Click to Cancel)
+              <span className="w-2 h-2 bg-booked-bg" /> 
+              {myBookings.length > 0 ? "Booked (Yours: Click to Cancel)" : "Booked"}
             </span>
           </div>
 
