@@ -198,6 +198,7 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
   const [slotToCancel, setSlotToCancel] = useState<ServerBooking | null>(null);
+  const [dismissedTooltips, setDismissedTooltips] = useState<Record<string, boolean>>({});
 
   const [showMenu, setShowMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -984,12 +985,21 @@ export default function App() {
                   )}
                 >
                   {/* Price Tooltip on Hover */}
-                  {!isDisabled && !isBooked && (
-                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 -translate-y-2 group-hover:translate-y-0 transition-all duration-300 pointer-events-none z-20">
-                      <div className="bg-neo-green text-black text-[9px] font-black px-2 py-1 rounded shadow-xl uppercase tracking-tighter whitespace-nowrap">
-                        {membership !== 'NONE' ? 'Free' : `₹${getSlotPrice(slot)}`}
+                  {!isDisabled && !isBooked && !dismissedTooltips[slot] && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 -translate-y-2 group-hover:translate-y-0 transition-all duration-300 z-20 flex flex-col items-center">
+                      <div className="bg-neo-green text-black text-[9px] font-black px-1.5 py-1 flex items-center gap-1 rounded shadow-xl uppercase tracking-tighter whitespace-nowrap">
+                        <span>{['PLATINUM', 'GOLD', 'DIAMOND'].includes(membership) ? 'Free' : `₹${membership === 'BRONZE' ? Math.round(getSlotPrice(slot) * 0.9) : getSlotPrice(slot)}`}</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDismissedTooltips(prev => ({...prev, [slot]: true}));
+                          }}
+                          className="hover:bg-black/20 rounded p-0.5 ml-1 transition-colors pointer-events-auto"
+                        >
+                          <X className="w-2 h-2" />
+                        </button>
                       </div>
-                      <div className="w-2 h-2 bg-neo-green rotate-45 mx-auto -mt-1" />
+                      <div className="w-2 h-2 bg-neo-green rotate-45 -mt-1 pointer-events-none" />
                     </div>
                   )}
 
