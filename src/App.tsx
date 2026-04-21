@@ -196,6 +196,8 @@ export default function App() {
   
   const [isBooking, setIsBooking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showRemoteUpdate, setShowRemoteUpdate] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
   const [slotToCancel, setSlotToCancel] = useState<ServerBooking | null>(null);
   const [dismissedTooltips, setDismissedTooltips] = useState<Record<string, boolean>>({});
@@ -230,6 +232,9 @@ export default function App() {
 
       socketRef.current.on('bookingsUpdated', () => {
         console.log('Real-time sync: Availability data refreshed.');
+        // Show brief pulse notification for other users
+        setShowRemoteUpdate(true);
+        setTimeout(() => setShowRemoteUpdate(false), 3000);
       });
     }
 
@@ -362,13 +367,24 @@ export default function App() {
 
   // 6. Weather Effect
   useEffect(() => {
+    let isMounted = true;
     const fetchWeather = async () => {
       try {
-        const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=18.6251&longitude=73.8824&current=temperature_2m,weather_code');
+        const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=18.6251&longitude=73.8824&current=temperature_2m,weather_code', {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
         const data = await response.json();
         
+        if (!isMounted) return;
+
         // Simple mapping for demonstration
-        const code = data.current.weather_code;
+        const code = data?.current?.weather_code ?? 0;
         let cond = 'Clear';
         if (code >= 1 && code <= 3) cond = 'Partly Cloudy';
         if (code >= 45 && code <= 48) cond = 'Fog';
@@ -377,16 +393,26 @@ export default function App() {
         if (code >= 95) cond = 'Stormy';
 
         setWeather({
-          temp: Math.round(data.current.temperature_2m),
+          temp: Math.round(data?.current?.temperature_2m ?? 25),
           condition: cond
         });
       } catch (e) {
-        console.error('Weather fetch error:', e);
+        // Silently fail or use fallback for weather
+        if (isMounted) {
+          console.warn('Weather fetch suppressed due to network restriction or API limit.');
+          // Optional: set a default weather if first load fails
+          if (!weather) {
+            setWeather({ temp: 28, condition: 'Sunny' });
+          }
+        }
       }
     };
     fetchWeather();
     const interval = setInterval(fetchWeather, 600000); // Update every 10 min
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // 4. Pricing Settings Listener
@@ -559,6 +585,7 @@ export default function App() {
 
       if (isReferralValid) setHasUsedReferral(true);
       setAppError(null);
+      setShowPreviewModal(false);
       setShowSuccess(true);
       setSelectedSlots([]);
       setTimeout(() => setShowSuccess(false), 5000);
@@ -954,8 +981,12 @@ export default function App() {
               const hour = parseInt(slot, 10);
               const slotDateTime = new Date(selectedDate);
               slotDateTime.setHours(hour, 0, 0, 0);
+              
+              // We compare against the start of the current hour to give a tiny bit of grace
+              // but mostly if it's started, it's passed.
               const isPast = slotDateTime < new Date();
-              const isDisabled = isPast && !isBooked && !isAdmin;
+              const isUnavailable = isPast && !isBooked;
+              const isDisabled = isUnavailable && !isAdmin;
 
               return (
                 <button
@@ -972,7 +1003,7 @@ export default function App() {
                   }}
                   className={cn(
                     "relative py-5 xl:py-6 border rounded-2xl text-center transition-all duration-300 px-2 shadow-lg group",
-                    isDisabled
+                    isUnavailable
                       ? "opacity-20 cursor-not-allowed bg-black/40 border-white/5"
                       : isBooked
                         ? cn(
@@ -989,15 +1020,17 @@ export default function App() {
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 -translate-y-2 group-hover:translate-y-0 transition-all duration-300 z-20 flex flex-col items-center">
                       <div className="bg-neo-green text-black text-[9px] font-black px-1.5 py-1 flex items-center gap-1 rounded shadow-xl uppercase tracking-tighter whitespace-nowrap">
                         <span>{['PLATINUM', 'GOLD', 'DIAMOND'].includes(membership) ? 'Free' : `₹${membership === 'BRONZE' ? Math.round(getSlotPrice(slot) * 0.9) : getSlotPrice(slot)}`}</span>
-                        <button 
+                        <span 
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
                             setDismissedTooltips(prev => ({...prev, [slot]: true}));
                           }}
-                          className="hover:bg-black/20 rounded p-0.5 ml-1 transition-colors pointer-events-auto"
+                          className="hover:bg-black/20 rounded p-0.5 ml-1 transition-colors pointer-events-auto cursor-pointer flex items-center justify-center"
                         >
                           <X className="w-2 h-2" />
-                        </button>
+                        </span>
                       </div>
                       <div className="w-2 h-2 bg-neo-green rotate-45 -mt-1 pointer-events-none" />
                     </div>
@@ -1021,7 +1054,7 @@ export default function App() {
                     "text-[9px] xl:text-[10px] block truncate text-center uppercase tracking-widest transition-colors",
                     isSelected ? "text-black/60 font-bold" : "text-gray-500"
                   )}>
-                    {isBooked ? "BOOKED" : isDisabled ? "PASSED" : isSelected ? "SELECTED" : "AVAILABLE"}
+                    {isBooked ? "BOOKED" : isUnavailable ? "PASSED" : isSelected ? "SELECTED" : "AVAILABLE"}
                   </span>
 
                   {isBooked && canManage && (
@@ -1389,7 +1422,7 @@ export default function App() {
             <div className="mt-8">
               <button 
                 disabled={isBooking || !userName || !userPhone || selectedSlots.length === 0}
-                onClick={handleBooking}
+                onClick={() => setShowPreviewModal(true)}
                 className={cn(
                   "w-full py-5 font-black uppercase tracking-[2px] text-sm transition-all duration-300",
                   isBooking || !userName || !userPhone || selectedSlots.length === 0
@@ -1405,6 +1438,100 @@ export default function App() {
         </div>
         )}
       </main>
+
+      {/* PREVIEW/CONFIRM MODAL */}
+      <AnimatePresence>
+        {showPreviewModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-card-bg border border-white/10 p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-1 h-full bg-neo-green" />
+              
+              <div className="flex justify-between items-start mb-8">
+                <div>
+                  <h3 className="text-neo-green text-2xl font-black uppercase tracking-[3px] mb-1">Confirm Booking</h3>
+                  <p className="text-[10px] text-text-dim uppercase tracking-widest font-mono">Verify your reservation details</p>
+                </div>
+                <button onClick={() => setShowPreviewModal(false)} className="text-text-dim hover:text-red-500 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-6 mb-10">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-text-dim uppercase tracking-widest block">Date</span>
+                    <span className="text-white font-bold uppercase tracking-widest text-[11px] block">{format(selectedDate, 'MMM dd, yyyy')}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-text-dim uppercase tracking-widest block">Plan Access</span>
+                    <span className="text-neo-green font-bold uppercase tracking-widest text-[11px] block">{membership}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[9px] text-text-dim uppercase tracking-widest block">Selected Slots</span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedSlots.map(s => (
+                      <span key={s} className="bg-white/5 border border-white/10 px-2 py-1 rounded text-[10px] text-white font-mono uppercase tracking-widest">
+                        {formatSlotDisplay(s)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-black/40 border border-white/5 p-4 rounded-xl space-y-3">
+                  <div className="flex justify-between text-[11px] uppercase tracking-widest text-text-dim">
+                    <span>Base Fare</span>
+                    <span>₹{selectedSlots.reduce((sum, s) => sum + getSlotPrice(s), 0)}</span>
+                  </div>
+                  {membership !== 'NONE' && (
+                    <div className="flex justify-between text-[11px] uppercase tracking-widest text-neo-green">
+                      <span>Benefit ({membership})</span>
+                      <span>{membership === 'BRONZE' ? '-10%' : '-₹' + selectedSlots.reduce((sum, s) => sum + getSlotPrice(s), 0)}</span>
+                    </div>
+                  )}
+                  {isReferralValid && (
+                    <div className="flex justify-between text-[11px] uppercase tracking-widest text-neo-green">
+                      <span>Referral Apply</span>
+                      <span>-₹{REFERRAL_DISCOUNT}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center border-t border-white/10 pt-3 text-neo-green">
+                    <span className="text-[11px] font-black uppercase tracking-[2px]">Final Amount</span>
+                    <span className="text-xl font-bold">₹{totalPrice}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowPreviewModal(false)}
+                  className="flex-1 py-4 text-[10px] font-black uppercase tracking-[2px] text-white border border-white/10 hover:bg-white/5 transition-all"
+                >
+                  Edit Slots
+                </button>
+                <button 
+                  onClick={handleBooking}
+                  disabled={isBooking}
+                  className="flex-1 py-4 text-[10px] font-black uppercase tracking-[2px] bg-neo-green text-black hover:opacity-90 transition-all shadow-[0_0_15px_rgba(194,255,1,0.3)] disabled:opacity-50"
+                >
+                  {isBooking ? 'Securing...' : 'Verify & Pay'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CANCEL MODAL */}
       <AnimatePresence>
@@ -1626,31 +1753,46 @@ export default function App() {
       <AnimatePresence>
         {showSuccess && (
           <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm"
           >
-            <motion.div 
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="bg-card-bg border border-neo-green p-10 max-w-sm w-full shadow-2xl shadow-neo-green/20 text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-neo-green/10 border border-neo-green flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 className="w-8 h-8 text-neo-green" />
+            <div className="bg-neo-green text-black px-6 py-4 flex items-center gap-4 shadow-[0_0_40px_rgba(194,255,1,0.2)] border border-black/10 rounded-xl">
+              <CheckCircle2 className="w-6 h-6 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-black uppercase tracking-[2px]">Booking Confirmed</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest opacity-70">Your slots are secured!</span>
               </div>
-              <h3 className="text-neo-green text-2xl font-black mb-2 uppercase tracking-[2px]">Booking Complete</h3>
-              <p className="text-[12px] uppercase tracking-widest text-text-dim mb-8">
-                Your slots have been successfully reserved!
-              </p>
               <button 
-                onClick={() => setShowSuccess(false)} 
-                className="w-full bg-neo-green text-black hover:opacity-90 transition-all py-4 font-black uppercase tracking-widest text-[11px]"
+                onClick={() => setShowSuccess(false)}
+                className="ml-auto hover:bg-black/10 p-1 rounded-lg transition-colors"
               >
-                Close Window
+                <X className="w-4 h-4" />
               </button>
-            </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRemoteUpdate && (
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="fixed bottom-6 right-6 z-[100] hidden sm:block"
+          >
+            <div className="bg-black/90 backdrop-blur-xl border border-neo-green/30 px-5 py-4 rounded-2xl flex items-center gap-4 shadow-2xl">
+              <div className="relative">
+                <div className="w-3 h-3 rounded-full bg-neo-green animate-ping absolute inset-0" />
+                <div className="w-3 h-3 rounded-full bg-neo-green relative" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black uppercase tracking-[2px] text-white">Live Update</span>
+                <span className="text-[8px] font-bold uppercase tracking-widest text-neo-green/70">New Slot Just Booked</span>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

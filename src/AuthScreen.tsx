@@ -91,8 +91,23 @@ export default function AuthScreen() {
         });
       }
     } catch (err: any) {
-      console.error("Google Auth Error:", err);
-      setError(err.message || 'Google authentication failed');
+      console.error("Full Google Auth Error Object:", JSON.stringify(err, null, 2));
+      console.error("Google Auth Error Code:", err.code);
+      console.error("Google Auth Error Message:", err.message);
+
+      if (err.code === 'auth/internal-error') {
+        setError('Firebase Internal Error. Check your console for details. Usually this is caused by: 1. Google Provider not enabled in Firebase Console. 2. Current domain not in Authorized Domains list. 3. Third-party cookies being blocked.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Google Sign-In is not enabled in the Firebase Console. Please go to Authentication > Sign-in method and enable Google.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Firebase Auth. Please add it to the Authorized Domains list in the Firebase Console.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('Login popup was blocked by your browser. Please allow popups for this site or click the "Open in new tab" icon (top right) to sign in there.');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in window was closed before completion. Please try again.');
+      } else {
+        setError(err.message || 'Google authentication failed');
+      }
     } finally {
       setLoading(false);
     }
