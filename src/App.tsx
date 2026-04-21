@@ -215,6 +215,7 @@ export default function App() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
   const [slotToCancel, setSlotToCancel] = useState<ServerBooking | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [dismissedTooltips, setDismissedTooltips] = useState<Record<string, boolean>>({});
 
   const [showMenu, setShowMenu] = useState(false);
@@ -634,6 +635,7 @@ export default function App() {
 
   const handleCancelBooking = async () => {
     if (!slotToCancel || !slotToCancel.id) return;
+    setIsCancelling(true);
     try {
       await deleteDoc(doc(db, 'bookings', slotToCancel.id));
       
@@ -645,6 +647,8 @@ export default function App() {
       setSlotToCancel(null);
     } catch (error: any) {
       handleFirestoreError(error, OperationType.DELETE, `bookings/${slotToCancel.id}`);
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -813,68 +817,48 @@ export default function App() {
           </header>
 
         {/* TAB SWITCHER */}
-        <div className="flex gap-4 mb-8 bg-black/40 p-1.5 rounded-2xl border border-white/5 w-max">
-          <button 
-            onClick={() => { setCurrentTab('booking'); setCurrentView('app'); }}
-            className={cn(
-              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'booking' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+        <div className="w-full overflow-x-auto no-scrollbar pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 sm:mb-8">
+          <div className="flex gap-2 sm:gap-4 bg-black/40 p-1.5 rounded-2xl border border-white/5 w-max">
+            {['booking', 'gallery'].map((tab) => (
+              <button 
+                key={tab}
+                onClick={() => { setCurrentTab(tab as any); setCurrentView('app'); }}
+                className={cn(
+                  "px-5 sm:px-8 py-2.5 sm:py-3.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[2px] transition-all whitespace-nowrap",
+                  currentTab === tab && currentView === 'app' ? "bg-neo-green text-black shadow-lg shadow-neo-green/20" : "text-gray-500 hover:text-white"
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+            {isAdmin && (
+              <button 
+                onClick={() => setCurrentView('admin')}
+                className={cn(
+                  "px-5 sm:px-8 py-2.5 sm:py-3.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[2px] transition-all whitespace-nowrap",
+                  currentView === 'admin' ? "bg-neo-green text-black" : "text-[#C2FF00]/60 hover:text-neo-green border border-neo-green/20"
+                )}
+              >
+                Admin
+              </button>
             )}
-          >
-            Booking
-          </button>
-          <button 
-            onClick={() => { setCurrentTab('events'); setCurrentView('app'); }}
-            className={cn(
-              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'events' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
-            )}
-          >
-            Events
-          </button>
-          <button 
-            onClick={() => { setCurrentTab('community'); setCurrentView('app'); }}
-            className={cn(
-              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'community' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
-            )}
-          >
-            Community
-          </button>
-          <button 
-            onClick={() => { setCurrentTab('gallery'); setCurrentView('app'); }}
-            className={cn(
-              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-              currentTab === 'gallery' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
-            )}
-          >
-            Gallery
-          </button>
-          {isAdmin && (
-            <button 
-              onClick={() => setCurrentView('admin')}
-              className={cn(
-                "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
-                currentView === 'admin' ? "bg-neo-green text-black" : "text-[#C2FF00]/60 hover:text-neo-green border border-neo-green/20"
-              )}
-            >
-              Admin
-            </button>
-          )}
+          </div>
         </div>
 
         {/* MAIN CONTAINER */}
-        <main className="flex-1 flex flex-col">
+        <main className="flex-1 flex flex-col mt-4 sm:mt-8">
           {currentView === 'admin' ? (
-            <div className="glass-panel w-full max-w-5xl mx-auto">
-              <AdminDashboard 
-                bookings={bookings} 
-                tournaments={tournaments} 
-                adminUid={authUser.uid} 
-                hourlyRate={hourlyRate}
-                timeBasedPricing={timeBasedPricing}
-                onDataChange={() => socketRef.current?.emit('bookingChanged')}
-              />
+            <div className="w-full max-w-6xl mx-auto">
+              <div className="glass-panel w-full overflow-hidden">
+                <AdminDashboard 
+                  bookings={bookings} 
+                  tournaments={tournaments} 
+                  adminUid={authUser.uid} 
+                  hourlyRate={hourlyRate}
+                  timeBasedPricing={timeBasedPricing}
+                  onDataChange={() => socketRef.current?.emit('bookingChanged')}
+                />
+              </div>
             </div>
           ) : currentTab === 'gallery' ? (
             <div className="glass-panel w-full max-w-5xl mx-auto flex flex-col gap-8">
@@ -1096,42 +1080,51 @@ export default function App() {
                   </div>
                   <div className="flex gap-2">
                     <div className="px-3 py-1.5 bg-black/40 border border-white/10 rounded-lg text-[8px] font-mono text-neo-green font-black uppercase tracking-widest flex items-center gap-1.5">
-                      <Globe className="w-3 h-3" /> DIST: PUNE
-                    </div>
+                    <Globe className="w-3 h-3" /> DIST: PUNE
                   </div>
                 </div>
-              </motion.div>
-
-              {/* Date Selector Pill */}
-              <div className="flex items-center gap-2 sm:gap-4 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl sm:rounded-full px-3 sm:px-4 py-2 w-full sm:w-max shadow-lg mb-2">
-                <button className="p-2 text-white/50 hover:text-white transition hidden sm:block"><ChevronRight className="w-5 h-5 rotate-180" /></button>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 justify-between sm:justify-start">
-                  {next7Days.map((date) => (
-                    <button
-                      key={date.toISOString()}
-                      onClick={() => {
-                        setSelectedDate(date);
-                        setSelectedSlots([]);
-                      }}
-                      className={cn(
-                        "flex-shrink-0 w-14 sm:w-[4.5rem] py-2 sm:py-3 rounded-xl sm:rounded-2xl transition-all duration-300 flex flex-col items-center justify-center border",
-                        isSameDay(date, selectedDate)
-                          ? "border-neo-green bg-neo-green/10 text-neo-green shadow-[0_0_15px_rgba(194,255,0,0.2)]"
-                          : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                      )}
-                    >
-                      <div className="text-[9px] sm:text-[11px] font-medium mb-0.5 uppercase">{format(date, 'EEE')}</div>
-                      <div className="text-base sm:text-xl font-bold">{format(date, 'd')}</div>
-                    </button>
-                  ))}
-                </div>
-                <button className="p-2 text-white/50 hover:text-white transition hidden sm:block"><ChevronRight className="w-5 h-5" /></button>
               </div>
+            </motion.div>
 
-              {/* TIME SLOTS GLASS PANEL */}
-              <div className="glass-panel w-full p-4 sm:p-6 lg:p-10">
+            {/* Date Selector Pill */}
+            <div className="flex items-center gap-2 sm:gap-4 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl sm:rounded-full px-3 sm:px-4 py-2 w-full sm:w-max shadow-lg mb-4">
+              <button className="p-2 text-white/50 hover:text-white transition hidden sm:block hover:bg-white/5 rounded-full"><ChevronRight className="w-5 h-5 rotate-180" /></button>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 justify-start">
+                {next7Days.map((date) => (
+                  <button
+                    key={date.toISOString()}
+                    onClick={() => {
+                      setSelectedDate(date);
+                      setSelectedSlots([]);
+                    }}
+                    className={cn(
+                      "flex-shrink-0 w-16 sm:w-[4.5rem] py-2 sm:py-3 rounded-xl sm:rounded-2xl transition-all duration-300 flex flex-col items-center justify-center border",
+                      isSameDay(date, selectedDate)
+                        ? "border-neo-green bg-neo-green/10 text-neo-green shadow-[0_0_15px_rgba(194,255,0,0.2)]"
+                        : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                    )}
+                  >
+                    <div className="text-[9px] sm:text-[10px] font-medium mb-0.5 uppercase tracking-tighter sm:tracking-widest">{format(date, 'EEE')}</div>
+                    <div className="text-base sm:text-xl font-bold">{format(date, 'd')}</div>
+                  </button>
+                ))}
+              </div>
+              <button className="p-2 text-white/50 hover:text-white transition hidden sm:block hover:bg-white/5 rounded-full"><ChevronRight className="w-5 h-5" /></button>
+            </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 lg:gap-4">
+            {/* TIME SLOTS GLASS PANEL */}
+            <div className="glass-panel w-full p-4 sm:p-8 lg:p-10 mb-8 lg:mb-0">
+               <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
+                 <div className="flex flex-col">
+                   <h3 className="text-xl sm:text-2xl font-black text-white italic uppercase tracking-tighter">Daily Availability</h3>
+                   <span className="text-[10px] text-gray-500 uppercase tracking-widest">{format(selectedDate, 'EEEE, MMM do yyyy')}</span>
+                 </div>
+                 <div className="bg-neo-green/10 px-3 py-1.5 rounded-lg border border-neo-green/20">
+                   <span className="text-neo-green font-black text-[10px] uppercase tracking-widest">{TIME_SLOTS.length - bookings.filter(b => b.date === format(selectedDate, 'yyyy-MM-dd')).length} Slots Left</span>
+                 </div>
+               </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-4 lg:gap-6">
             {TIME_SLOTS.map((slot) => {
               const bookedSlotData = bookedSlotsMap.get(slot);
               const bookedBy = bookedSlotData?.userName;
@@ -1715,20 +1708,23 @@ export default function App() {
             >
               <h3 className="text-neo-green text-xl font-bold mb-4 uppercase tracking-widest">Cancel Booking?</h3>
               <p className="text-sm text-text-dim mb-8">
-                Are you sure you want to cancel the booking for <span className="text-white font-bold">{slotToCancel.slot}</span> on {format(selectedDate, 'MMM do')}?
+                Are you sure you want to cancel the booking for <span className="text-white font-bold">{slotToCancel.slot}</span> on {format(new Date(slotToCancel.date + 'T00:00:00'), 'MMM do')}? This will free up the slot for other players.
               </p>
               <div className="flex gap-4">
                 <button 
                   onClick={handleCancelBooking} 
-                  className="flex-1 bg-red-500/10 text-red-500 border border-red-500/50 hover:bg-red-500 hover:text-white transition-all py-3 font-bold uppercase tracking-widest text-[10px]"
+                  disabled={isCancelling}
+                  className="flex-1 bg-red-600 text-white hover:bg-red-700 transition-all py-4 font-black uppercase tracking-widest text-[10px] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Yes, Cancel
+                   {isCancelling ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                   {isCancelling ? 'Cancelling...' : 'Confirm'}
                 </button>
                 <button 
                   onClick={() => setSlotToCancel(null)} 
-                  className="flex-1 border border-border-dim text-white hover:border-text-dim transition-all py-3 font-bold uppercase tracking-widest text-[10px]"
+                  disabled={isCancelling}
+                  className="flex-1 border border-white/10 text-white hover:bg-white/5 transition-all py-4 font-black uppercase tracking-widest text-[10px] disabled:opacity-50"
                 >
-                  Keep Slot
+                  Go Back
                 </button>
               </div>
             </motion.div>
@@ -1879,7 +1875,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Date</label>
-                    <input type="date" name="date" required defaultValue={format(new Date(), 'yyyy-MM-dd')} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none invert dark:invert-0" />
+                    <input type="date" name="date" required min={format(new Date(), 'yyyy-MM-dd')} defaultValue={format(new Date(), 'yyyy-MM-dd')} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-neo-green transition-all outline-none invert dark:invert-0" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Time</label>

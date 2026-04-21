@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { db } from './firebase';
-import { doc, collection, writeBatch, deleteDoc, updateDoc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
+import { db, storage } from './firebase';
+import { doc, collection, writeBatch, deleteDoc, updateDoc, onSnapshot, setDoc, getDoc, addDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format, subDays, eachDayOfInterval, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { handleFirestoreError, OperationType, ServerBooking, Tournament, formatSlotDisplay } from './App';
 import { 
   Trash2, Trophy, Plus, Calendar as CalendarIcon, MapPin, Clock, Edit2, X, Check, Search, Filter, 
   ArrowUpDown, ArrowUp, ArrowDown, BarChart3, TrendingUp, Users, IndianRupee, PieChart, Timer,
-  Bell, Info, AlertTriangle, MessageSquare
+  Bell, Info, AlertTriangle, MessageSquare, Loader2, ImageIcon
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -41,6 +42,7 @@ export default function AdminDashboard({
   timeBasedPricing,
   onDataChange 
 }: AdminDashboardProps) {
+  const [currentTab, setCurrentTab] = useState<'overview' | 'bookings' | 'users' | 'gallery' | 'pricing' | 'notifications'>('overview');
   const [newDate, setNewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newSlot, setNewSlot] = useState('');
   const [newUserName, setNewUserName] = useState('');
@@ -79,6 +81,11 @@ export default function AdminDashboard({
   // Pricing State
   const [baseRateInput, setBaseRateInput] = useState<number>(hourlyRate);
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
+  const [bookingToDelete, setBookingToDelete] = useState<ServerBooking | null>(null);
+  const [tournamentToDelete, setTournamentToDelete] = useState<Tournament | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [gallery, setGallery] = useState<{id: string, url: string, title: string}[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Real-time notifications state
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
@@ -179,6 +186,62 @@ export default function AdminDashboard({
   useEffect(() => {
     setBaseRateInput(hourlyRate);
   }, [hourlyRate]);
+
+  // Fetch Gallery Images
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'gallery'), (snapshot) => {
+      const imgs: any[] = [];
+      snapshot.forEach(doc => {
+        imgs.push({ id: doc.id, ...doc.data() });
+      });
+      setGallery(imgs);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleUploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const storagePath = `gallery/${Date.now()}_${file.name}`;
+        const storageRef = ref(storage, storagePath);
+        const uploadTask = await uploadBytesResumable(storageRef, file);
+        const downloadUrl = await getDownloadURL(uploadTask.ref);
+        
+        await addDoc(collection(db, 'gallery'), {
+          url: downloadUrl,
+          storagePath: storagePath,
+          title: file.name,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      alert('Failed to upload some images.');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteImage = async (imgId: string, imgUrl: string) => {
+    if (!confirm('Are you sure you want to delete this image?')) return;
+    try {
+      await deleteDoc(doc(db, 'gallery', imgId));
+      try {
+        const fileRef = ref(storage, imgUrl);
+        await deleteObject(fileRef);
+      } catch (e) {
+        console.error('Failed to delete file from storage', e);
+      }
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      alert('Failed to delete image.');
+    }
+  };
 
   const handleUpdateRate = async () => {
     if (baseRateInput <= 0) return;
@@ -323,23 +386,31 @@ export default function AdminDashboard({
       : <ArrowDown className="w-3 h-3 text-neo-green" />;
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to cancel this booking?")) return;
+  const handleDelete = async () => {
+    if (!bookingToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, 'bookings', id));
+      await deleteDoc(doc(db, 'bookings', bookingToDelete.id));
       onDataChange();
+      setBookingToDelete(null);
     } catch (error: any) {
-      handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
+      handleFirestoreError(error, OperationType.DELETE, `bookings/${bookingToDelete.id}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleDeleteTournament = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this tournament?")) return;
+  const handleDeleteTournament = async () => {
+    if (!tournamentToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, 'tournaments', id));
+      await deleteDoc(doc(db, 'tournaments', tournamentToDelete.id));
       onDataChange();
+      setTournamentToDelete(null);
     } catch (error: any) {
-      handleFirestoreError(error, OperationType.DELETE, `tournaments/${id}`);
+      handleFirestoreError(error, OperationType.DELETE, `tournaments/${tournamentToDelete.id}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -499,7 +570,7 @@ export default function AdminDashboard({
         </AnimatePresence>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-[4px] text-neo-green mb-1">Command Center</h2>
           <p className="text-[10px] text-text-dim font-mono tracking-widest uppercase">Georgopol Turf Management System v2.0</p>
@@ -514,10 +585,34 @@ export default function AdminDashboard({
            </div>
         </div>
       </div>
+
+      {/* TABS NAVIGATION */}
+      <div className="flex flex-wrap gap-2 mb-12 border-b border-border-dim pb-4">
+        {[
+          { id: 'overview', label: 'Overview & Bookings', icon: BarChart3 },
+          { id: 'gallery', label: 'Gallery Management', icon: ImageIcon },
+          { id: 'notifications', label: 'Activity Logs', icon: Bell },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setCurrentTab(tab.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+              currentTab === tab.id 
+                ? "bg-neo-green text-black" 
+                : "bg-dark-bg text-text-dim border border-border-dim hover:text-white hover:border-white/20"
+            )}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
       
       <div className="flex flex-col gap-12">
-        
-        {/* ANALYTICS BRIEFING */}
+        {currentTab === 'overview' && (
+          <>
+            {/* ANALYTICS BRIEFING */}
         <section>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="glass-panel p-6 border-white/5 group hover:border-neo-green/30 transition-all">
@@ -670,7 +765,7 @@ export default function AdminDashboard({
                   <div>
                     <label className="block text-[10px] uppercase text-text-dim tracking-widest mb-2">Date</label>
                     <input 
-                      type="date" required value={tDate} onChange={e => setTDate(e.target.value)}
+                      type="date" required min={format(new Date(), 'yyyy-MM-dd')} value={tDate} onChange={e => setTDate(e.target.value)}
                       className="w-full bg-dark-bg border border-border-dim p-3 text-xs outline-none focus:border-neo-green"
                     />
                   </div>
@@ -745,7 +840,7 @@ export default function AdminDashboard({
                       </div>
                     </div>
                     <button 
-                      onClick={() => handleDeleteTournament(t.id)}
+                      onClick={() => setTournamentToDelete(t)}
                       className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -774,6 +869,7 @@ export default function AdminDashboard({
                   <input 
                     type="date"
                     required
+                    min={format(new Date(), 'yyyy-MM-dd')}
                     value={newDate}
                     onChange={e => setNewDate(e.target.value)}
                     className="w-full bg-dark-bg border border-border-dim p-3 text-xs outline-none focus:border-neo-green"
@@ -859,6 +955,7 @@ export default function AdminDashboard({
                       <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500" />
                       <input 
                         type="date" 
+                        min={format(new Date(), 'yyyy-MM-dd')}
                         value={bookingDateStart}
                         onChange={e => setBookingDateStart(e.target.value)}
                         placeholder="Start Date"
@@ -869,6 +966,7 @@ export default function AdminDashboard({
                       <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500" />
                       <input 
                         type="date" 
+                        min={format(new Date(), 'yyyy-MM-dd')}
                         value={bookingDateEnd}
                         onChange={e => setBookingDateEnd(e.target.value)}
                         placeholder="End Date"
@@ -918,6 +1016,7 @@ export default function AdminDashboard({
                             <td className="py-2 pr-2">
                               <input 
                                 type="date" 
+                                min={format(new Date(), 'yyyy-MM-dd')}
                                 value={editDate} 
                                 onChange={e => setEditDate(e.target.value)}
                                 className="w-full bg-dark-bg border border-border-dim p-1.5 text-[10px] outline-none focus:border-neo-green"
@@ -1002,7 +1101,7 @@ export default function AdminDashboard({
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                                 <button 
-                                  onClick={() => handleDelete(b.id)}
+                                  onClick={() => setBookingToDelete(b)}
                                   className="text-red-500/40 hover:text-red-500 hover:bg-red-500/10 transition-all p-2 rounded-lg"
                                   title="Cancel Booking"
                                 >
@@ -1139,8 +1238,191 @@ export default function AdminDashboard({
             </div>
           </div>
         </section>
+        </>
+        )}
+
+        {currentTab === 'gallery' && (
+          <section>
+            <div className="flex items-center gap-2 mb-6">
+              <ImageIcon className="w-5 h-5 text-neo-green" />
+              <h3 className="text-sm font-bold uppercase tracking-widest text-white">Gallery Uploads</h3>
+            </div>
+            <div className="glass-panel p-8">
+              <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-12 text-center">
+                <ImageIcon className="w-12 h-12 text-text-dim mb-4" />
+                <h4 className="text-lg font-bold mb-2">Upload Turf Images</h4>
+                <p className="text-[10px] text-text-dim uppercase tracking-widest mb-6 max-w-sm">
+                  Add images of your turf to show customers. Images will be displayed in the public gallery.
+                </p>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={isUploading}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                    onChange={handleUploadImages}
+                  />
+                  <button disabled={isUploading} className="bg-neo-green text-black px-6 py-3 rounded-xl text-[10px] uppercase font-black tracking-widest flex items-center gap-2 hover:opacity-90 disabled:opacity-50">
+                    {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    {isUploading ? 'Uploading...' : 'Select Images'}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                {gallery.length > 0 ? (
+                  gallery.map((img) => (
+                    <div key={img.id} className="relative group rounded-xl overflow-hidden aspect-video bg-white/5">
+                      <img src={img.url} alt={img.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                        <div className="text-sm font-bold">{img.title}</div>
+                        <button 
+                          onClick={() => handleDeleteImage(img.id, img.url)}
+                          className="absolute top-4 right-4 bg-red-500/20 text-red-500 p-2 rounded-lg hover:bg-red-500 hover:text-white transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-1 md:col-span-3 text-center py-12 text-[10px] uppercase tracking-widest text-text-dim border border-white/5 rounded-2xl bg-white/5">
+                    No images in gallery yet
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {currentTab === 'notifications' && (
+          <section>
+            <div className="flex items-center gap-2 mb-6">
+              <Bell className="w-5 h-5 text-neo-green" />
+              <h3 className="text-sm font-bold uppercase tracking-widest text-white">Activity Logs</h3>
+            </div>
+            <div className="glass-panel p-8">
+              {notifications.length === 0 ? (
+                <div className="text-center py-12 text-[10px] uppercase tracking-widest text-text-dim">
+                  No activity recorded yet
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {notifications.map(n => (
+                    <div key={n.id} className="flex items-start gap-4 p-4 border border-white/5 rounded-xl bg-white/5">
+                      <div className={cn(
+                        "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                        n.type === 'BOOKING_CANCEL' ? "bg-red-500/10 text-red-500" : 
+                        n.type === 'REFERRAL_USE' ? "bg-neo-green/10 text-neo-green" : "bg-blue-500/10 text-blue-500"
+                      )}>
+                        {n.type === 'BOOKING_CANCEL' ? <AlertTriangle className="w-5 h-5" /> : 
+                        n.type === 'REFERRAL_USE' ? <Bell className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-text-dim mb-1">
+                          {n.type.replace('_', ' ')} • {format(new Date(n.timestamp), 'PPp')}
+                        </div>
+                        <div className="text-sm font-bold">{n.message}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
       </div>
+
+      {/* DELETE CONFIRMATION MODALS */}
+      <AnimatePresence>
+        {bookingToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0A0A0A] border border-red-500/30 p-8 max-w-sm w-full shadow-2xl relative overflow-hidden rounded-2xl"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-red-500/50" />
+              <div className="flex items-center gap-3 mb-6 text-red-500">
+                <AlertTriangle className="w-6 h-6" />
+                <h3 className="text-xl font-black uppercase tracking-tighter">Confirm Cancellation</h3>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-8 leading-relaxed uppercase tracking-wider">
+                You are about to cancel the booking for <span className="text-white font-bold">{bookingToDelete.userName}</span> at <span className="text-white font-bold">{formatSlotDisplay(bookingToDelete.slot)}</span> on {bookingToDelete.date}. This action is permanent.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 bg-red-600 text-white py-4 text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 rounded-xl flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  {isDeleting ? 'Removing...' : 'Yes, Delete'}
+                </button>
+                <button 
+                  onClick={() => setBookingToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 border border-white/10 text-white py-4 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all disabled:opacity-50 rounded-xl"
+                >
+                  Nevermind
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {tournamentToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0A0A0A] border border-red-500/30 p-8 max-w-sm w-full shadow-2xl relative overflow-hidden rounded-2xl"
+            >
+               <div className="absolute top-0 left-0 w-full h-1 bg-red-500/50" />
+              <div className="flex items-center gap-3 mb-6 text-red-500">
+                <AlertTriangle className="w-6 h-6" />
+                <h3 className="text-xl font-black uppercase tracking-tighter">Remove Tournament</h3>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-8 leading-relaxed uppercase tracking-wider">
+                Are you sure you want to delete <span className="text-white font-bold uppercase">{tournamentToDelete.title}</span>? All tournament data will be lost.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDeleteTournament}
+                  disabled={isDeleting}
+                  className="flex-1 bg-red-600 text-white py-4 text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 rounded-xl flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+                <button 
+                  onClick={() => setTournamentToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 border border-white/10 text-white py-4 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all disabled:opacity-50 rounded-xl"
+                >
+                  Go Back
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
