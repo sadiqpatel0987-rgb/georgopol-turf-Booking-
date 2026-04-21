@@ -5,12 +5,14 @@ import { format, subDays, eachDayOfInterval, isWithinInterval, startOfDay, endOf
 import { handleFirestoreError, OperationType, ServerBooking, Tournament, formatSlotDisplay } from './App';
 import { 
   Trash2, Trophy, Plus, Calendar as CalendarIcon, MapPin, Clock, Edit2, X, Check, Search, Filter, 
-  ArrowUpDown, ArrowUp, ArrowDown, BarChart3, TrendingUp, Users, IndianRupee, PieChart, Timer
+  ArrowUpDown, ArrowUp, ArrowDown, BarChart3, TrendingUp, Users, IndianRupee, PieChart, Timer,
+  Bell, Info, AlertTriangle, MessageSquare
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   LineChart, Line, AreaChart, Area, Cell, Pie
 } from 'recharts';
+import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from './lib/utils';
 import { TimeBasedPricing } from './types';
 
@@ -21,6 +23,14 @@ interface AdminDashboardProps {
   hourlyRate: number;
   timeBasedPricing: TimeBasedPricing[];
   onDataChange: () => void;
+}
+
+interface AdminNotification {
+  id: string;
+  type: 'BOOKING_NEW' | 'BOOKING_CANCEL'| 'REFERRAL_USE';
+  message: string;
+  timestamp: string;
+  read: boolean;
 }
 
 export default function AdminDashboard({ 
@@ -69,6 +79,65 @@ export default function AdminDashboard({
   // Pricing State
   const [baseRateInput, setBaseRateInput] = useState<number>(hourlyRate);
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
+  
+  // Real-time notifications state
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [prevBookingsState, setPrevBookingsState] = useState<ServerBooking[]>(bookings);
+
+  // Monitor bookings for changes to trigger local notifications
+  useEffect(() => {
+    if (prevBookingsState.length === 0) {
+      setPrevBookingsState(bookings);
+      return;
+    }
+
+    const newNotify: AdminNotification[] = [];
+
+    // Check for deletions (cancellations)
+    const currentIds = new Set(bookings.map(b => b.id));
+    prevBookingsState.forEach(oldB => {
+      if (!currentIds.has(oldB.id)) {
+        newNotify.push({
+          id: `cancel-${Date.now()}-${oldB.id}`,
+          type: 'BOOKING_CANCEL',
+          message: `Booking Cancelled: ${oldB.userName} (${formatSlotDisplay(oldB.slot)} on ${oldB.date})`,
+          timestamp: new Date().toISOString(),
+          read: false
+        });
+      }
+    });
+
+    // Check for additions
+    const prevIds = new Set(prevBookingsState.map(b => b.id));
+    bookings.forEach(newB => {
+      if (!prevIds.has(newB.id)) {
+        // If it's a new booking with a referral
+        if (newB.referralCodeUsed) {
+          newNotify.push({
+            id: `ref-${Date.now()}-${newB.id}`,
+            type: 'REFERRAL_USE',
+            message: `Referral Used! Code: ${newB.referralCodeUsed} by ${newB.userName}`,
+            timestamp: new Date().toISOString(),
+            read: false
+          });
+        } else {
+           newNotify.push({
+            id: `new-${Date.now()}-${newB.id}`,
+            type: 'BOOKING_NEW',
+            message: `New Booking: ${newB.userName} - ${formatSlotDisplay(newB.slot)}`,
+            timestamp: new Date().toISOString(),
+            read: false
+          });
+        }
+      }
+    });
+
+    if (newNotify.length > 0) {
+      setNotifications(prev => [...newNotify, ...prev].slice(0, 50));
+    }
+    
+    setPrevBookingsState(bookings);
+  }, [bookings]);
 
   // Fetch user profiles for bookings that don't have membership info
   useEffect(() => {
@@ -394,6 +463,42 @@ export default function AdminDashboard({
 
   return (
     <div className="bg-[#050505] p-4 md:p-8 text-white min-h-screen">
+      {/* NOTIFICATION CENTER (TOP FIXED) */}
+      <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {notifications.filter(n => !n.read).slice(0, 5).map(n => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+              className="pointer-events-auto bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl flex items-start gap-4 relative group"
+            >
+              <div className={cn(
+                "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                n.type === 'BOOKING_CANCEL' ? "bg-red-500/10 text-red-500" : 
+                n.type === 'REFERRAL_USE' ? "bg-neo-green/10 text-neo-green" : "bg-blue-500/10 text-blue-500"
+              )}>
+                {n.type === 'BOOKING_CANCEL' ? <AlertTriangle className="w-5 h-5" /> : 
+                 n.type === 'REFERRAL_USE' ? <Bell className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+              </div>
+              <div className="flex-1 pr-4">
+                <div className="text-[10px] font-black uppercase tracking-widest text-text-dim mb-1">
+                  {n.type.replace('_', ' ')} • {format(new Date(n.timestamp), 'HH:mm')}
+                </div>
+                <div className="text-[11px] font-bold leading-tight line-clamp-2">{n.message}</div>
+              </div>
+              <button 
+                onClick={() => setNotifications(prev => prev.map(item => item.id === n.id ? {...item, read: true} : item))}
+                className="absolute top-2 right-2 text-white/20 hover:text-white transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-[4px] text-neo-green mb-1">Command Center</h2>

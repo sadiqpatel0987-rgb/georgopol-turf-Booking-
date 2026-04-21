@@ -63,6 +63,18 @@
       },
       "required": ["userId", "userName", "sport", "date", "time", "playersNeeded"]
     },
+    "GalleryImage": {
+      "title": "Gallery Image",
+      "description": "Metadata for turf gallery images",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["url", "storagePath"]
+    },
     "Settings": {
       "title": "Global Settings",
       "description": "Configuration settings for the application",
@@ -105,6 +117,10 @@
     "/game_posts/{postId}": {
       "schema": "GamePost",
       "description": "Community matchmaking posts"
+    },
+    "/gallery/{imageId}": {
+      "schema": "GalleryImage",
+      "description": "Turf gallery images"
     }
   }
 }

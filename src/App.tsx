@@ -25,7 +25,11 @@ import {
   Trophy,
   Globe,
   Tag,
-  Users
+  Users,
+  Plus,
+  Loader2,
+  Camera,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -40,7 +44,7 @@ import {
 } from './types';
 
 // Firebase Imports
-import { auth, db } from './firebase';
+import { auth, db, storage } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { 
   collection, 
@@ -55,8 +59,10 @@ import {
   getDocs, 
   updateDoc, 
   setDoc,
-  increment 
+  increment,
+  addDoc 
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import AuthScreen from './AuthScreen';
 import AdminDashboard from './AdminDashboard';
 
@@ -156,6 +162,14 @@ export interface Tournament {
   createdAt: string;
 }
 
+export interface GalleryImage {
+  id: string;
+  url: string;
+  title: string;
+  storagePath: string;
+  createdAt: string;
+}
+
 export interface GamePost {
   id: string;
   userId: string;
@@ -177,6 +191,7 @@ export default function App() {
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [bookings, setBookings] = useState<ServerBooking[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [gamePosts, setGamePosts] = useState<GamePost[]>([]);
   const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
   const [hourlyRate, setHourlyRate] = useState(BASE_HOURLY_RATE);
@@ -205,7 +220,7 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showPostModal, setShowPostModal] = useState(false);
-  const [currentTab, setCurrentTab] = useState<'booking' | 'events' | 'community'>('booking');
+  const [currentTab, setCurrentTab] = useState<'booking' | 'events' | 'community' | 'gallery'>('booking');
   const [activeViewers, setActiveViewers] = useState(1);
   const socketRef = React.useRef<any>(null);
 
@@ -343,6 +358,26 @@ export default function App() {
         console.warn('Tournaments permission error (likely during auth transition)');
       } else {
         handleFirestoreError(error, OperationType.LIST, 'tournaments');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [authUser]);
+
+  // 4. Gallery Listener
+  useEffect(() => {
+    const q = collection(db, 'gallery');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedImages: GalleryImage[] = [];
+      snapshot.forEach(doc => {
+        fetchedImages.push({ id: doc.id, ...doc.data() } as GalleryImage);
+      });
+      setGalleryImages(fetchedImages.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    }, (error) => {
+      if (error.message.includes('insufficient permissions')) {
+        console.warn('Gallery permission error');
+      } else {
+        handleFirestoreError(error, OperationType.LIST, 'gallery');
       }
     });
 
@@ -617,6 +652,41 @@ export default function App() {
     signOut(auth);
   };
 
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
+  const handleUploadGallery = async (file: File, title: string) => {
+    if (!isAdmin) return;
+    setIsUploadingGallery(true);
+    try {
+      const storagePath = `gallery/${Date.now()}_${file.name}`;
+      const imageRef = ref(storage, storagePath);
+      await uploadBytes(imageRef, file);
+      const url = await getDownloadURL(imageRef);
+      
+      await addDoc(collection(db, 'gallery'), {
+        url,
+        title,
+        storagePath,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'gallery');
+    } finally {
+      setIsUploadingGallery(false);
+    }
+  };
+
+  const handleDeleteGallery = async (image: GalleryImage) => {
+    if (!isAdmin || !image.id) return;
+    if (!confirm('Are you sure you want to delete this image?')) return;
+    try {
+      await deleteDoc(doc(db, 'gallery', image.id));
+      const imageRef = ref(storage, image.storagePath);
+      await deleteObject(imageRef);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `gallery/${image.id}`);
+    }
+  };
+
   const handleCreatePost = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!authUser || !userName) return;
@@ -771,6 +841,15 @@ export default function App() {
           >
             Community
           </button>
+          <button 
+            onClick={() => { setCurrentTab('gallery'); setCurrentView('app'); }}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all",
+              currentTab === 'gallery' && currentView === 'app' ? "bg-neo-green text-black" : "text-gray-500 hover:text-white"
+            )}
+          >
+            Gallery
+          </button>
           {isAdmin && (
             <button 
               onClick={() => setCurrentView('admin')}
@@ -796,6 +875,92 @@ export default function App() {
                 timeBasedPricing={timeBasedPricing}
                 onDataChange={() => socketRef.current?.emit('bookingChanged')}
               />
+            </div>
+          ) : currentTab === 'gallery' ? (
+            <div className="glass-panel w-full max-w-5xl mx-auto flex flex-col gap-8">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h2 className="text-3xl font-black text-neo-green tracking-[4px] uppercase mb-1">Turf Showcase</h2>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest">Experience the elite facility at Dighi, Pune.</p>
+                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer bg-neo-green text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all flex items-center gap-2">
+                      <Camera className="w-4 h-4" />
+                      {isUploadingGallery ? <Loader2 className="w-4 h-4 animate-spin" /> : "Upload Photo"}
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        disabled={isUploadingGallery}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const title = prompt("Enter a short title for this photo:", "Turf View");
+                            if (title) handleUploadGallery(file, title);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {(galleryImages.length > 0 ? galleryImages : [
+                  { url: "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=1200", title: "Midnight Arena" },
+                  { url: "https://images.unsplash.com/photo-1551958219-acbc608c6377?auto=format&fit=crop&q=80&w=1200", title: "Premium Surface" },
+                  { url: "https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&q=80&w=1200", title: "Floodlight View" },
+                  { url: "https://images.unsplash.com/photo-1431324155629-1a6eda1eed2d?auto=format&fit=crop&q=80&w=1200", title: "Turf Quality" },
+                  { url: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=1200", title: "Action Zone" },
+                  { url: "https://images.unsplash.com/photo-1518605336347-fb852927e1f4?auto=format&fit=crop&q=80&w=1200", title: "Elite Play" }
+                ]).map((img: any, i) => (
+                  <motion.div 
+                    key={img.id || i}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="group relative h-64 overflow-hidden rounded-2xl border border-white/10 bg-black/20"
+                  >
+                    <img 
+                      src={img.url} 
+                      alt={img.title} 
+                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+                      <div className="flex justify-between items-end w-full">
+                        <div>
+                          <span className="text-[10px] text-neo-green font-black uppercase tracking-[2px]">{img.title}</span>
+                          {img.createdAt && (
+                            <div className="text-[8px] text-gray-400 font-mono tracking-widest mt-1 opacity-60">
+                              {new Date(img.createdAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                        {isAdmin && img.id && (
+                          <button 
+                            onClick={() => handleDeleteGallery(img as GalleryImage)}
+                            className="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-lg transition-all scale-75 group-hover:scale-100"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="bg-neo-green/5 border border-neo-green/10 rounded-2xl p-8 flex flex-col items-center text-center">
+                 <h4 className="text-white font-bold uppercase tracking-widest text-sm mb-4">Ready to play?</h4>
+                 <button 
+                  onClick={() => setCurrentTab('booking')}
+                  className="bg-neo-green text-black px-10 py-3 rounded-full text-xs font-black uppercase tracking-widest hover:scale-105 transition-all"
+                >
+                  Book Your Slot Now
+                </button>
+              </div>
             </div>
           ) : currentTab === 'events' ? (
             <div className="glass-panel w-full max-w-4xl mx-auto flex flex-col gap-8">
