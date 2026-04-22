@@ -1676,14 +1676,14 @@ export default function App() {
                   onClick={() => setShowPreviewModal(false)}
                   className="flex-1 py-4 text-[10px] font-black uppercase tracking-[2px] text-white border border-white/10 hover:bg-white/5 transition-all"
                 >
-                  Edit Slots
+                  Cancel
                 </button>
                 <button 
                   onClick={handleBooking}
                   disabled={isBooking}
                   className="flex-1 py-4 text-[10px] font-black uppercase tracking-[2px] bg-neo-green text-black hover:opacity-90 transition-all shadow-[0_0_15px_rgba(194,255,1,0.3)] disabled:opacity-50"
                 >
-                  {isBooking ? 'Securing...' : 'Verify & Pay'}
+                  {isBooking ? 'Securing...' : 'Confirm'}
                 </button>
               </div>
             </motion.div>
